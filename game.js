@@ -19,7 +19,8 @@ const grounded = (fighter) => fighter.y === FLOOR;
 
 function fighter(x, color, facing) {
   return { x, y: FLOOR, vy: 0, color, facing, health: MAX_HEALTH, meter: 50,
-    stun: 0, attack: null, guard: false, combo: 0, buffer: null, cancelFlash: 0 };
+    stun: 0, attack: null, guard: false, combo: 0, buffer: null, cancelFlash: 0,
+    idlePhase: 0, walkPhase: 0, walkBlend: 0, walkDirection: 1 };
 }
 
 function updateFighter(player, opponent, controls, held, pressed) {
@@ -61,6 +62,7 @@ function updateFighter(player, opponent, controls, held, pressed) {
   const direction = Number(held.has(controls.right)) - Number(held.has(controls.left));
   player.x += direction * (grounded(player) ? 4.8 : 3.5);
   if (grounded(player) && pressed.has(controls.jump)) player.vy = -12;
+  return direction;
 }
 
 function active(attack) {
@@ -104,9 +106,12 @@ function resolveHit({ from, to, attack, blocked }) {
 
 function step(players, held, pressed, training) {
   const [one, two] = players;
-  updateFighter(one, two, bindings[0], held, pressed);
+  const startingX = players.map((player) => player.x);
   const idle = new Set();
-  updateFighter(two, one, bindings[1], training ? idle : held, training ? idle : pressed);
+  const movement = [
+    updateFighter(one, two, bindings[0], held, pressed),
+    updateFighter(two, one, bindings[1], training ? idle : held, training ? idle : pressed),
+  ];
   if (!two.stun) one.combo = 0;
   if (!one.stun) two.combo = 0;
 
@@ -121,6 +126,17 @@ function step(players, held, pressed, training) {
     left.x = clamp((left.x + right.x) / 2 - 23, 28, WIDTH - 74);
     right.x = left.x + 46;
   }
+
+  players.forEach((player, index) => {
+    const travel = player.x - startingX[index];
+    const walking = grounded(player) && travel * movement[index] > 0.25;
+    player.idlePhase += 0.075;
+    if (walking) {
+      player.walkDirection = Math.sign(travel) * player.facing;
+      player.walkPhase += Math.abs(travel) * 0.047;
+    }
+    player.walkBlend = clamp(player.walkBlend + (walking ? 0.2 : -0.2), 0, 1);
+  });
 
   // Capture both contacts before applying stun so simultaneous strikes can trade.
   const hits = [contact(one, two), contact(two, one)];
@@ -181,11 +197,30 @@ function boot() {
     box(x, y, width, height, "#384455");
     box(reverse ? x + width * (1 - fraction) : x, y, width * fraction, height, color);
   }
+  function strokePath(points, color, width) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    ctx.moveTo(...points[0]);
+    for (const point of points.slice(1)) ctx.lineTo(...point);
+    ctx.stroke();
+  }
   function drawFighter(player) {
-    const { x, y, color, facing, attack, stun, guard, cancelFlash } = player;
+    const { x, y, color, facing, attack, stun, guard, cancelFlash, idlePhase, walkPhase, walkBlend, walkDirection } = player;
+    const airborne = !grounded(player);
+    const moving = attack || guard || stun || airborne ? 0 : walkBlend;
+    const breath = Math.sin(idlePhase);
+    const stride = Math.sin(walkPhase);
+    const hip = [0, -43 + breath * (1 - moving) - Math.abs(stride) * 4 * moving];
+    const lean = stun ? -9 : attack ? 9 : 4 + 6 * moving * walkDirection;
+    const shoulder = [lean, hip[1] - 31 + breath * 1.5 * (1 - moving)];
+    const head = [shoulder[0] + 3, shoulder[1] - 16];
+
     ctx.save();
     ctx.translate(x, y);
     ctx.scale(facing, 1);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
     if (cancelFlash) {
       ctx.strokeStyle = "#f9efb1";
       ctx.lineWidth = 3;
@@ -193,20 +228,37 @@ function boot() {
       ctx.arc(0, -46, 55 + (13 - cancelFlash) * 2, 0, Math.PI * 2);
       ctx.stroke();
     }
-    const suit = stun && !guard ? "#f2eee2" : color;
-    box(-19, -77, 38, 46, suit);
-    box(-13, -101, 28, 23, suit);
-    box(2, -95, 14, 5, "#263442");
-    box(-19, -30, 13, 27, suit);
-    box(7, -30, 13, 27, suit);
-    if (guard) {
-      box(18, -83, 12, 49, "#e0eeff");
-    } else if (active(attack)) {
-      const height = attack.name === "launcher" ? 53 : 16;
-      box(15, -64 - (height - 16), attack.move.range - 23, height, suit);
-    } else {
-      box(13, -64, 22, 13, suit);
+    for (const side of [-1, 1]) {
+      const phase = walkPhase + (side === 1 ? Math.PI : 0);
+      const swing = Math.sin(phase) * walkDirection * moving;
+      const lift = Math.max(0, Math.cos(phase)) * 15 * moving;
+      const foot = [side * 12 * (1 - moving) + swing * 24, -4 - lift - (airborne ? (side === 1 ? 13 : 6) : 0)];
+      const knee = [foot[0] * 0.55 + 5 + lift * 0.3, (hip[1] + foot[1]) / 2 - lift * 0.18];
+      ctx.globalAlpha = side === -1 ? 0.54 : 1;
+      strokePath([hip, knee, foot, [foot[0] + 7, foot[1]]], color, 6);
+
+      let elbow = [shoulder[0] + side * 8 - swing * 11, shoulder[1] + 16];
+      let hand = [shoulder[0] + 12 + side * 7 - swing * 21, shoulder[1] + 6 + moving * 18 + breath * 1.5];
+      if (guard) {
+        elbow = [shoulder[0] + 10, shoulder[1] + 13];
+        hand = [shoulder[0] + 23 + side * 3, shoulder[1] - 8 + side * 5];
+      } else if (side === 1 && active(attack)) {
+        const raised = attack.name === "launcher";
+        elbow = [27, shoulder[1] + (raised ? -5 : 5)];
+        hand = [Math.min(59, attack.move.range - 33), shoulder[1] + (raised ? -28 : 3)];
+      }
+      strokePath([shoulder, elbow, hand], color, 6);
     }
+    ctx.globalAlpha = 1;
+    strokePath([hip, shoulder, head], color, 7);
+    ctx.fillStyle = "#1b2936";
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(...head, 12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    strokePath([[head[0] + 3, head[1] - 2], [head[0] + 7, head[1] - 2]], color, 2.5);
     ctx.restore();
   }
   function draw() {
