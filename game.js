@@ -1,7 +1,12 @@
 "use strict";
 
 const WIDTH = 960;
+const STAGE_WIDTH = 1800;
+const STAGE_EDGE = 100;
 const FLOOR = 407;
+const CAMERA_FLOOR = 421;
+const MIN_ZOOM = WIDTH / STAGE_WIDTH;
+const MAX_ZOOM = 1.7;
 const MAX_HEALTH = 300;
 const CANCEL_COST = 50;
 const GRAVITY = 0.62;
@@ -16,6 +21,21 @@ const bindings = [
 ];
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const grounded = (fighter) => fighter.y === FLOOR;
+
+function cameraView([one, two], previousZoom, elapsed) {
+  const left = Math.min(one.x, two.x);
+  const right = Math.max(one.x, two.x);
+  const span = right - left;
+  const headroom = FLOOR - Math.min(one.y, two.y) + 145;
+  const horizontalLimit = WIDTH / (span + 2 * STAGE_EDGE);
+  const verticalLimit = (CAMERA_FLOOR - 90) / headroom;
+  const target = clamp(Math.min(WIDTH / (span + 400), verticalLimit), MIN_ZOOM, MAX_ZOOM);
+  const eased = previousZoom + (target - previousZoom) * (1 - Math.exp(-elapsed / 125));
+  const zoom = clamp(eased, MIN_ZOOM, Math.min(horizontalLimit, verticalLimit, MAX_ZOOM));
+  const halfView = WIDTH / (2 * zoom);
+  const center = clamp((left + right) / 2, halfView, STAGE_WIDTH - halfView);
+  return { zoom, center };
+}
 
 function fighter(x, color, facing, boxer = false) {
   return { x, y: FLOOR, vy: 0, color, facing, boxer, health: MAX_HEALTH, meter: 50,
@@ -120,12 +140,12 @@ function step(players, held, pressed, training) {
   for (const player of players) {
     player.y = Math.min(FLOOR, player.y + player.vy);
     player.vy = grounded(player) ? 0 : player.vy + GRAVITY;
-    player.x = clamp(player.x, 28, WIDTH - 28);
+    player.x = clamp(player.x, STAGE_EDGE, STAGE_WIDTH - STAGE_EDGE);
   }
 
   if (Math.abs(one.y - two.y) < 65 && Math.abs(one.x - two.x) < 46) {
     const [left, right] = one.x <= two.x ? [one, two] : [two, one];
-    left.x = clamp((left.x + right.x) / 2 - 23, 28, WIDTH - 74);
+    left.x = clamp((left.x + right.x) / 2 - 23, STAGE_EDGE, STAGE_WIDTH - STAGE_EDGE - 46);
     right.x = left.x + 46;
   }
 
@@ -145,7 +165,7 @@ function step(players, held, pressed, training) {
   for (const hit of hits) {
     if (hit) resolveHit(hit);
   }
-  for (const player of players) player.x = clamp(player.x, 28, WIDTH - 28);
+  for (const player of players) player.x = clamp(player.x, STAGE_EDGE, STAGE_WIDTH - STAGE_EDGE);
   if (training && two.health === 0) two.health = MAX_HEALTH;
 }
 
@@ -160,9 +180,11 @@ function boot() {
   let players;
   let accumulator = 0;
   let previous;
+  let zoom;
 
   function reset() {
-    players = [fighter(405, "#72b9ff", 1, true), fighter(451, "#ffab67", -1)];
+    players = [fighter(STAGE_WIDTH / 2 - 23, "#72b9ff", 1, true), fighter(STAGE_WIDTH / 2 + 23, "#ffab67", -1)];
+    zoom = MAX_ZOOM;
     held.clear();
     pressed.clear();
     accumulator = 0;
@@ -230,6 +252,28 @@ function boot() {
     }
     ctx.fill();
   }
+  function drawMuscle(start, end, upper, lower, color, highlight) {
+    ctx.save();
+    ctx.translate(...start);
+    const dx = end[0] - start[0];
+    const dy = end[1] - start[1];
+    const length = Math.hypot(dx, dy);
+    ctx.rotate(Math.atan2(dy, dx));
+    ctx.beginPath();
+    ctx.moveTo(-2, -upper * 0.72);
+    ctx.bezierCurveTo(length * 0.3, -upper * 1.2, length * 0.63, -upper * 0.8, length, -lower);
+    ctx.quadraticCurveTo(length + lower, 0, length, lower);
+    ctx.bezierCurveTo(length * 0.5, upper * 0.82, 1, upper * 1.25, -3, upper * 0.6);
+    ctx.quadraticCurveTo(-upper, 0, -2, -upper * 0.72);
+    ctx.fillStyle = color;
+    ctx.strokeStyle = "#141b2b";
+    ctx.lineWidth = 2.4;
+    ctx.fill();
+    ctx.stroke();
+    strokePath([[length * 0.15, -upper * 0.55], [length * 0.4, -upper * 0.62],
+      [length * 0.72, -lower * 0.63]], highlight, 2.4);
+    ctx.restore();
+  }
   function drawBoxerBody(hip, shoulder, head) {
     const [hx, hy] = hip;
     const [sx, sy] = shoulder;
@@ -240,19 +284,34 @@ function boot() {
       [hx + 13, hy + 1], [hx - 14, hy + 1], [sx - 19, sy + 7]], "#3676c6");
     polygon([[sx - 16, sy + 1], [sx - 6, sy + 10], [hx + 10, hy - 6],
       [hx + 13, hy + 1], [hx - 14, hy + 1]], "#214880");
-    strokePath([[sx - 13, sy - 4], [sx + 2, sy + 3], [sx + 10, sy - 5]], "#a3d4ff", 2);
-    inkPath([[hx - 13, hy], [hx + 13, hy]], "#edf1ff", 4);
-    oval(x, y, 11, 13, "#b67653", true);
-    polygon([[x - 10, y - 10], [x - 6, y - 14], [x + 4, y - 14],
-      [x + 8, y - 10], [x - 5, y - 8], [x - 9, y - 4]], "#261d29");
-    strokePath([[x + 3, y - 3], [x + 8, y - 4]], "#141b2b", 2);
-    strokePath([[x + 4, y + 6], [x + 8, y + 6]], "#653e3b", 2);
+    polygon([[sx - 12, sy - 6], [sx + 9, sy - 7], [sx + 8, sy + 1],
+      [sx + 2, sy + 7], [sx - 6, sy + 3]], "#a66a53");
+    strokePath([[sx - 13, sy - 4], [sx - 6, sy + 3], [sx + 2, sy + 7], [sx + 8, sy + 2]], "#a3d4ff", 2);
+    strokePath([[sx - 12, sy + 13], [sx - 7, sy + 17], [hx - 8, hy - 6]], "#5899dc", 2);
+    inkPath([[hx - 15, hy], [hx + 15, hy]], "#edf1ff", 6);
+    box(hx - 4, hy - 2, 8, 4, "#31598a");
+
+    const face = [[x - 10, y - 10], [x - 5, y - 16], [x + 4, y - 16],
+      [x + 10, y - 11], [x + 10, y - 4], [x + 14, y + 1], [x + 10, y + 3],
+      [x + 10, y + 9], [x + 5, y + 13], [x - 3, y + 12], [x - 9, y + 7]];
+    polygon(face, "#c08460");
+    strokePath([...face, face[0]], "#141b2b", 2);
+    polygon([[x - 7, y + 1], [x, y + 4], [x + 8, y + 3], [x + 10, y + 9],
+      [x + 5, y + 12], [x - 3, y + 11], [x - 8, y + 6]], "#895344");
+    polygon([[x - 10, y - 10], [x - 5, y - 16], [x + 4, y - 16],
+      [x + 10, y - 11], [x + 3, y - 10], [x - 5, y - 10], [x - 8, y - 4]], "#261d29");
+    oval(x - 8, y + 1, 3.2, 4, "#a66a53", true);
+    polygon([[x + 1, y - 4], [x + 9, y - 5], [x + 7, y - 2], [x + 3, y - 2]], "#ffefde");
+    strokePath([[x, y - 5], [x + 8, y - 6]], "#33212d", 2);
+    box(x + 6, y - 4, 1.5, 2, "#241c27");
+    strokePath([[x + 4, y + 7], [x + 9, y + 6]], "#422732", 1.7);
   }
   function drawBoxerGlove(elbow, hand) {
     const [x, y] = hand;
     strokePath([[x + (elbow[0] - x) * 0.34, y + (elbow[1] - y) * 0.34], hand], "#f1e9dc", 10);
     oval(x, y, 10, 9, "#c73646", true);
-    oval(x + 2, y - 3, 5, 2.5, "#ff7b72");
+    oval(x - 4, y + 4, 4, 3.5, "#982a43");
+    strokePath([[x - 2, y - 5], [x + 3, y - 6], [x + 6, y - 4]], "#ff7b72", 2);
   }
   function drawFighter(player) {
     const { x, y, color, facing, boxer, attack, stun, guard, cancelFlash, idlePhase, walkPhase, walkBlend, walkDirection } = player;
@@ -263,7 +322,7 @@ function boot() {
     const anticipation = attack && attack.age < attack.move.startup ? attack.age / attack.move.startup : 0;
     const release = attack && attack.age >= attack.move.startup
       ? Math.max(0, 1 - (attack.age - attack.move.startup) / (attack.move.active + 7)) : 0;
-    const hip = [0, -43 + breath * (1 - moving) - Math.abs(stride) * 4 * moving + anticipation * 8];
+    const hip = [0, (boxer ? -48 : -43) + breath * (1 - moving) - Math.abs(stride) * 4 * moving + anticipation * 8];
     const lean = stun && !guard ? -14 : 4 + 6 * moving * walkDirection - anticipation * 15 + release * 16;
     const shoulder = [lean, hip[1] - 31 + breath * 1.5 * (1 - moving)];
     const head = [shoulder[0] + 3, shoulder[1] - 16];
@@ -298,11 +357,20 @@ function boot() {
       const limb = side === -1 ? shadow : color;
       if (boxer) {
         const thigh = [hip[0] + side * 7, hip[1] + 3];
-        inkPath([thigh, knee, foot], side === 1 ? "#b67653" : "#805049", 10);
         const hem = [thigh[0] + (knee[0] - thigh[0]) * 0.65, thigh[1] + (knee[1] - thigh[1]) * 0.65];
-        inkPath([thigh, hem], side === 1 ? "#3676c6" : "#214880", 14);
-        inkPath([[foot[0] - 1, foot[1] - 8], foot, [foot[0] + 8, foot[1]]], "#26364f", 7);
-        strokePath([[foot[0] - 1, foot[1] - 5], [foot[0] + 3, foot[1] - 5]], "#9caec5", 2);
+        const skin = side === 1 ? "#b67653" : "#805049";
+        const light = side === 1 ? "#d89871" : "#a16858";
+        drawMuscle(knee, foot, 6.5, 3.8, skin, light);
+        drawMuscle(thigh, knee, 8, 5, skin, light);
+        drawMuscle(thigh, hem, 9.5, 8, side === 1 ? "#3676c6" : "#214880", "#79b4f4");
+        const [fx, fy] = foot;
+        polygon([[fx - 6, fy - 11], [fx + 4, fy - 11], [fx + 5, fy - 4], [fx + 12, fy - 2],
+          [fx + 13, fy + 3], [fx - 6, fy + 3]], "#141b2b");
+        polygon([[fx - 4, fy - 9], [fx + 2, fy - 9], [fx + 4, fy - 3], [fx + 10, fy],
+          [fx - 4, fy]], "#344961");
+        for (let lace = -7; lace <= -3; lace += 2) {
+          strokePath([[fx - 1, fy + lace], [fx + 3, fy + lace + 1]], "#acbfd5", 1.2);
+        }
       } else {
         inkPath([hip, knee, foot, [foot[0] + 7, foot[1]]], limb, 7);
       }
@@ -328,8 +396,11 @@ function boot() {
     if (boxer) {
       drawBoxerBody(hip, shoulder, head);
       for (const { elbow, hand, side } of boxerArms) {
-        const arm = [shoulder[0] + side * 11, shoulder[1] + 3];
-        inkPath([arm, elbow, hand], side === 1 ? "#b67653" : "#805049", 13);
+        const arm = [shoulder[0] + side * 13, shoulder[1] + 3];
+        const skin = side === 1 ? "#b67653" : "#805049";
+        const light = side === 1 ? "#d89871" : "#a16858";
+        drawMuscle(elbow, hand, 7, 4.5, skin, light);
+        drawMuscle(arm, elbow, 9, 5, skin, light);
         drawBoxerGlove(elbow, hand);
       }
       ctx.restore();
@@ -367,25 +438,31 @@ function boot() {
   sky.addColorStop(0.65, "#825e78");
   sky.addColorStop(1, "#ec9e7f");
 
-  function draw() {
-    box(0, 0, WIDTH, FLOOR, sky);
-    for (let x = 0; x < WIDTH; x += 67) {
+  function draw(elapsed) {
+    const view = cameraView(players, zoom, elapsed);
+    zoom = view.zoom;
+    ctx.save();
+    ctx.translate(WIDTH / 2, CAMERA_FLOOR);
+    ctx.scale(zoom, zoom);
+    ctx.translate(-view.center, -FLOOR);
+    box(0, -500, STAGE_WIDTH, FLOOR + 500, sky);
+    for (let x = 0; x < STAGE_WIDTH; x += 67) {
       const roof = 305 - (x % 9) * 9;
       box(x, roof, 55, FLOOR - roof, "#42435d");
       for (let y = roof + 12; y < 340; y += 18) box(x + 12, y, 19, 4, "#c78e80");
     }
-    for (let x = -30; x < WIDTH; x += 180) {
+    for (let x = -30; x < STAGE_WIDTH; x += 180) {
       polygon([[x, 190], [x + 18, 190], [x + 112, FLOOR], [x + 96, FLOOR]], "#282b43");
       box(x, 185, 98, 10, "#353951");
       box(x + 54, 195, 29, 4, "#f4be96");
     }
-    box(0, 371, WIDTH, 5, "#303048");
-    box(0, FLOOR, WIDTH, 93, "#262d45");
-    box(0, FLOOR, WIDTH, 4, "#e0a188");
-    for (let x = -24; x < WIDTH; x += 78) {
+    box(0, 371, STAGE_WIDTH, 5, "#303048");
+    box(0, FLOOR, STAGE_WIDTH, 170, "#262d45");
+    box(0, FLOOR, STAGE_WIDTH, 4, "#e0a188");
+    for (let x = -24; x < STAGE_WIDTH; x += 78) {
       polygon([[x, 431], [x + 38, 431], [x + 54, 440], [x + 14, 440]], "#795d6a");
     }
-    box(0, 458, WIDTH, 4, "#151d32");
+    box(0, 458, STAGE_WIDTH, 4, "#151d32");
     for (const player of players) {
       ctx.fillStyle = "#171c30";
       ctx.beginPath();
@@ -396,6 +473,7 @@ function boot() {
     for (const player of players) {
       if (player.impact) drawImpact(player.impact);
     }
+    ctx.restore();
     players.forEach((player, index) => {
       const right = index === 1;
       const x = right ? 590 : 40;
@@ -416,14 +494,15 @@ function boot() {
   }
   function frame(time) {
     const interval = 1000 / 60;
-    accumulator += Math.min(100, time - (previous ?? time));
+    const elapsed = Math.min(100, time - (previous ?? time));
+    accumulator += elapsed;
     previous = time;
     while (accumulator >= interval) {
       if (players.every((player) => player.health > 0)) step(players, held, pressed, training);
       pressed.clear();
       accumulator -= interval;
     }
-    draw();
+    draw(elapsed);
     requestAnimationFrame(frame);
   }
   reset();
