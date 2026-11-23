@@ -1,6 +1,7 @@
 "use strict";
 
 const WIDTH = 960;
+const HEIGHT = 501;
 const FLOOR = 407;
 const MAX_HEALTH = 300;
 const CANCEL_COST = 50;
@@ -150,7 +151,7 @@ function step(players, held, pressed, training) {
 function boot() {
   const canvas = document.querySelector("#arena");
   const ctx = canvas.getContext("2d");
-  ctx.scale(canvas.width / WIDTH, canvas.height / 500);
+  ctx.scale(canvas.width / WIDTH, canvas.height / HEIGHT);
   const mode = document.querySelector("#mode");
   const held = new Set();
   const pressed = new Set();
@@ -198,13 +199,23 @@ function boot() {
     box(x, y, width, height, "#384455");
     box(reverse ? x + width * (1 - fraction) : x, y, width * fraction, height, color);
   }
-  function strokePath(points, color, width) {
-    ctx.strokeStyle = color;
-    ctx.lineWidth = width;
+  const pixel = 3;
+  const snap = (value) => Math.round(value / pixel) * pixel;
+
+  function pixelPath(points, color, width = 6) {
+    ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.moveTo(...points[0]);
-    for (const point of points.slice(1)) ctx.lineTo(...point);
-    ctx.stroke();
+    for (let index = 1; index < points.length; index++) {
+      const [x, y] = points[index - 1];
+      const [nextX, nextY] = points[index];
+      const dx = nextX - x;
+      const dy = nextY - y;
+      const steps = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / pixel));
+      for (let step = 0; step <= steps; step++) {
+        ctx.rect(snap(x + dx * step / steps - width / 2), snap(y + dy * step / steps - width / 2), width, width);
+      }
+    }
+    ctx.fill();
   }
   function drawFighter(player) {
     const { x, y, color, facing, attack, stun, guard, cancelFlash, idlePhase, walkPhase, walkBlend, walkDirection } = player;
@@ -218,16 +229,12 @@ function boot() {
     const head = [shoulder[0] + 3, shoulder[1] - 16];
 
     ctx.save();
-    ctx.translate(Math.round(x / 2) * 2, Math.round(y / 2) * 2);
+    ctx.translate(snap(x), snap(y));
     ctx.scale(facing, 1);
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
     if (cancelFlash) {
-      ctx.strokeStyle = "#f9efb1";
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(0, -46, 55 + (13 - cancelFlash) * 2, 0, Math.PI * 2);
-      ctx.stroke();
+      const radius = snap(51 + (13 - cancelFlash) * 2);
+      const center = -48;
+      pixelPath([[0, center - radius], [radius, center], [0, center + radius], [-radius, center], [0, center - radius]], "#fff0bc", pixel);
     }
     for (const side of [-1, 1]) {
       const phase = walkPhase + (side === 1 ? Math.PI : 0);
@@ -236,7 +243,7 @@ function boot() {
       const foot = [side * 12 * (1 - moving) + swing * 24, -4 - lift - (airborne ? (side === 1 ? 13 : 6) : 0)];
       const knee = [foot[0] * 0.55 + 5 + lift * 0.3, (hip[1] + foot[1]) / 2 - lift * 0.18];
       ctx.globalAlpha = side === -1 ? 0.54 : 1;
-      strokePath([hip, knee, foot, [foot[0] + 7, foot[1]]], color, 6);
+      pixelPath([hip, knee, foot, [foot[0] + 7, foot[1]]], color);
 
       let elbow = [shoulder[0] + side * 8 - swing * 11, shoulder[1] + 16];
       let hand = [shoulder[0] + 12 + side * 7 - swing * 21, shoulder[1] + 6 + moving * 18 + breath * 1.5];
@@ -248,51 +255,44 @@ function boot() {
         elbow = [27, shoulder[1] + (raised ? -5 : 5)];
         hand = [Math.min(59, attack.move.range - 33), shoulder[1] + (raised ? -28 : 3)];
       }
-      strokePath([shoulder, elbow, hand], color, 6);
+      pixelPath([shoulder, elbow, hand], color);
     }
     ctx.globalAlpha = 1;
-    strokePath([hip, shoulder, head], color, 7);
-    ctx.fillStyle = "#201b33";
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    ctx.arc(...head, 12, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    strokePath([[head[0] + 3, head[1] - 2], [head[0] + 7, head[1] - 2]], color, 2.5);
+    pixelPath([hip, shoulder, head], color);
+    const [headX, headY] = head.map(snap);
+    box(headX - 9, headY - 12, 18, 24, color);
+    box(headX - 12, headY - 9, 24, 18, color);
+    box(headX - 6, headY - 6, 12, 12, "#11172b");
+    box(headX + 3, headY - 3, 3, 3, color);
     ctx.restore();
   }
   function drawArena() {
-    box(0, 0, WIDTH, 500, "#17142a");
-    box(0, 124, WIDTH, 282, "#221b37");
-    box(0, 208, WIDTH, 198, "#2f2346");
-    box(0, 282, WIDTH, 124, "#3b2b51");
+    box(0, 0, WIDTH, HEIGHT, "#11172b");
+    box(0, 126, WIDTH, 282, "#242d4d");
+    box(0, 252, WIDTH, 156, "#31527a");
 
     for (let column = 0; column < 16; column++) {
-      const x = column * 64;
-      const roof = 304 - ((column * 3) % 7) * 10;
-      box(x, roof, 52, FLOOR - roof, "#221d37");
-      for (let y = roof + 12; y < 346; y += 14) {
-        const offset = (column + y) % 3;
-        box(x + 8 + offset * 12, y, 6, 4, "#785563");
+      const x = column * 63;
+      const roof = 306 - ((column * 3) % 7) * 12;
+      box(x, roof, 51, 408 - roof, "#242d4d");
+      for (let y = roof + 12; y < 348; y += 18) {
+        box(x + 9 + ((column + y / 3) % 3) * 12, y, 6, 6, "#d99762");
       }
     }
 
-    for (let x = 28; x < WIDTH; x += 180) {
-      box(x, 164, 10, FLOOR - 164, "#1a182d");
-      box(x + 10, 164, 4, FLOOR - 164, "#4a3b61");
-      box(x - 8, 164, 26, 6, "#817296");
-      box(x - 8, 170, 16, 4, "#d5a681");
+    for (let x = 27; x < WIDTH; x += 180) {
+      box(x, 174, 9, 234, "#11172b");
+      box(x - 9, 174, 24, 6, "#7586a3");
+      box(x - 9, 180, 12, 6, "#fff0bc");
     }
-    box(0, 368, WIDTH, 6, "#61536e");
-    for (let x = 10; x < WIDTH; x += 42) box(x, 374, 4, 32, "#61536e");
-    box(0, FLOOR - 1, WIDTH, 94, "#242439");
-    box(0, FLOOR - 1, WIDTH, 4, "#af8f89");
-    box(0, 414, WIDTH, 6, "#444058");
-    box(0, 466, WIDTH, 34, "#19192d");
-    for (let x = 16; x < WIDTH; x += 48) {
-      box(x, 442, 26, 4, "#80705c");
-      box(x + 12, 480, 24, 4, "#35334b");
+    box(0, 372, WIDTH, 6, "#7586a3");
+    for (let x = 12; x < WIDTH; x += 42) box(x, 378, 6, 30, "#7586a3");
+    box(0, 408, WIDTH, HEIGHT - 408, "#242d4d");
+    box(0, 408, WIDTH, 6, "#d99762");
+    box(0, 462, WIDTH, HEIGHT - 462, "#11172b");
+    for (let x = 18; x < WIDTH; x += 48) {
+      box(x, 438, 24, 6, "#7586a3");
+      box(x + 12, 480, 24, 6, "#31527a");
     }
   }
   function draw() {
@@ -301,13 +301,13 @@ function boot() {
     players.forEach((player, index) => {
       const right = index === 1;
       const x = right ? 590 : 40;
-      label(right ? (training ? "DUMMY" : "PLAYER 2") : "PLAYER 1", right ? 920 : 40, 42, 17, player.color, right ? "right" : "left");
+      label(right ? (training ? "DUMMY" : "PLAYER 2") : "PLAYER 1", right ? 920 : 40, 42, 21, player.color, right ? "right" : "left");
       bar(x, 51, 330, 19, player.health / MAX_HEALTH, player.color, right);
       bar(x, 77, 330, 6, player.meter / 100, "#f9d780", right);
-      label(`METER ${player.meter}`, right ? 920 : 40, 104, 13, "#f9d780", right ? "right" : "left");
+      label(`METER ${player.meter}`, right ? 920 : 40, 108, 18, "#f9d780", right ? "right" : "left");
       if (player.combo > 1) label(`${player.combo} HIT COMBO`, right ? 920 : 40, 141, 23, player.color, right ? "right" : "left");
     });
-    label(training ? "PRACTICE" : "LOCAL VERSUS", WIDTH / 2, 51, 17, "#eef0e8", "center");
+    label(training ? "PRACTICE" : "LOCAL VERSUS", WIDTH / 2, 51, 21, "#fff0bc", "center");
     const defeated = players.filter((player) => player.health === 0);
     if (defeated.length) {
       box(245, 182, 470, 98, "#11151d");
