@@ -17,8 +17,8 @@ const bindings = [
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const grounded = (fighter) => fighter.y === FLOOR;
 
-function fighter(x, color, facing) {
-  return { x, y: FLOOR, vy: 0, color, facing, health: MAX_HEALTH, meter: 50,
+function fighter(x, color, facing, boxer = false) {
+  return { x, y: FLOOR, vy: 0, color, facing, boxer, health: MAX_HEALTH, meter: 50,
     stun: 0, attack: null, guard: false, combo: 0, buffer: null, cancelFlash: 0,
     idlePhase: 0, walkPhase: 0, walkBlend: 0, walkDirection: 1, impact: null };
 }
@@ -162,7 +162,7 @@ function boot() {
   let previous;
 
   function reset() {
-    players = [fighter(405, "#70e2c4", 1), fighter(451, "#ffab67", -1)];
+    players = [fighter(405, "#72b9ff", 1, true), fighter(451, "#ffab67", -1)];
     held.clear();
     pressed.clear();
     accumulator = 0;
@@ -219,11 +219,46 @@ function boot() {
     ctx.closePath();
     ctx.fill();
   }
+  function oval(x, y, radiusX, radiusY, color, outline = false) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(x, y, radiusX, radiusY, 0, 0, Math.PI * 2);
+    if (outline) {
+      ctx.strokeStyle = "#141b2b";
+      ctx.lineWidth = 4;
+      ctx.stroke();
+    }
+    ctx.fill();
+  }
+  function drawBoxerBody(hip, shoulder, head) {
+    const [hx, hy] = hip;
+    const [sx, sy] = shoulder;
+    const [x, y] = head;
+    polygon([[sx - 19, sy - 7], [sx + 12, sy - 8], [sx + 21, sy + 4],
+      [hx + 16, hy + 4], [hx - 17, hy + 4], [sx - 23, sy + 7]], "#141b2b");
+    polygon([[sx - 16, sy - 5], [sx + 10, sy - 6], [sx + 17, sy + 4],
+      [hx + 13, hy + 1], [hx - 14, hy + 1], [sx - 19, sy + 7]], "#3676c6");
+    polygon([[sx - 16, sy + 1], [sx - 6, sy + 10], [hx + 10, hy - 6],
+      [hx + 13, hy + 1], [hx - 14, hy + 1]], "#214880");
+    strokePath([[sx - 13, sy - 4], [sx + 2, sy + 3], [sx + 10, sy - 5]], "#a3d4ff", 2);
+    inkPath([[hx - 13, hy], [hx + 13, hy]], "#edf1ff", 4);
+    oval(x, y, 11, 13, "#b67653", true);
+    polygon([[x - 10, y - 10], [x - 6, y - 14], [x + 4, y - 14],
+      [x + 8, y - 10], [x - 5, y - 8], [x - 9, y - 4]], "#261d29");
+    strokePath([[x + 3, y - 3], [x + 8, y - 4]], "#141b2b", 2);
+    strokePath([[x + 4, y + 6], [x + 8, y + 6]], "#653e3b", 2);
+  }
+  function drawBoxerGlove(elbow, hand) {
+    const [x, y] = hand;
+    strokePath([[x + (elbow[0] - x) * 0.34, y + (elbow[1] - y) * 0.34], hand], "#f1e9dc", 10);
+    oval(x, y, 10, 9, "#c73646", true);
+    oval(x + 2, y - 3, 5, 2.5, "#ff7b72");
+  }
   function drawFighter(player) {
-    const { x, y, color, facing, attack, stun, guard, cancelFlash, idlePhase, walkPhase, walkBlend, walkDirection } = player;
+    const { x, y, color, facing, boxer, attack, stun, guard, cancelFlash, idlePhase, walkPhase, walkBlend, walkDirection } = player;
     const airborne = !grounded(player);
     const moving = attack || guard || stun || airborne ? 0 : walkBlend;
-    const breath = Math.sin(idlePhase);
+    const breath = Math.sin(idlePhase) * (boxer ? 1.8 : 1);
     const stride = Math.sin(walkPhase);
     const anticipation = attack && attack.age < attack.move.startup ? attack.age / attack.move.startup : 0;
     const release = attack && attack.age >= attack.move.startup
@@ -252,7 +287,8 @@ function boot() {
       polygon([[15, shoulder[1] + 14], [reach, shoulder[1] + height], [reach + 13, shoulder[1] + height - 12], [36, shoulder[1] - 5]], color);
       ctx.globalAlpha = 1;
     }
-    const shadow = color === "#70e2c4" ? "#3a9388" : "#ba6445";
+    const shadow = "#ba6445";
+    const boxerArms = [];
     for (const side of [-1, 1]) {
       const phase = walkPhase + (side === 1 ? Math.PI : 0);
       const swing = Math.sin(phase) * walkDirection * moving;
@@ -260,10 +296,23 @@ function boot() {
       const foot = [side * 12 * (1 - moving) + swing * 24, -4 - lift - (airborne ? (side === 1 ? 13 : 6) : 0)];
       const knee = [foot[0] * 0.55 + 5 + lift * 0.3, (hip[1] + foot[1]) / 2 - lift * 0.18];
       const limb = side === -1 ? shadow : color;
-      inkPath([hip, knee, foot, [foot[0] + 7, foot[1]]], limb, 7);
+      if (boxer) {
+        const thigh = [hip[0] + side * 7, hip[1] + 3];
+        inkPath([thigh, knee, foot], side === 1 ? "#b67653" : "#805049", 10);
+        const hem = [thigh[0] + (knee[0] - thigh[0]) * 0.65, thigh[1] + (knee[1] - thigh[1]) * 0.65];
+        inkPath([thigh, hem], side === 1 ? "#3676c6" : "#214880", 14);
+        inkPath([[foot[0] - 1, foot[1] - 8], foot, [foot[0] + 8, foot[1]]], "#26364f", 7);
+        strokePath([[foot[0] - 1, foot[1] - 5], [foot[0] + 3, foot[1] - 5]], "#9caec5", 2);
+      } else {
+        inkPath([hip, knee, foot, [foot[0] + 7, foot[1]]], limb, 7);
+      }
 
       let elbow = [shoulder[0] + side * 8 - swing * 11, shoulder[1] + 16];
       let hand = [shoulder[0] + 12 + side * 7 - swing * 21, shoulder[1] + 6 + moving * 18 + breath * 1.5];
+      if (boxer) {
+        elbow = [shoulder[0] + side * 9 - swing * 5, shoulder[1] + 17];
+        hand = [shoulder[0] + 19 + side * 6 - swing * 6, shoulder[1] - 5 + side * 4 + breath];
+      }
       if (guard) {
         elbow = [shoulder[0] + 10, shoulder[1] + 13];
         hand = [shoulder[0] + 23 + side * 3, shoulder[1] - 8 + side * 5];
@@ -273,7 +322,18 @@ function boot() {
         hand = [hand[0] - 29 * anticipation + (attack.name === "light" ? 26 : 38) * release,
           hand[1] + 10 * anticipation - (raised ? 44 : 4) * release];
       }
-      inkPath([shoulder, elbow, hand], limb, 7);
+      if (boxer) boxerArms.push({ elbow, hand, side });
+      else inkPath([shoulder, elbow, hand], limb, 7);
+    }
+    if (boxer) {
+      drawBoxerBody(hip, shoulder, head);
+      for (const { elbow, hand, side } of boxerArms) {
+        const arm = [shoulder[0] + side * 11, shoulder[1] + 3];
+        inkPath([arm, elbow, hand], side === 1 ? "#b67653" : "#805049", 13);
+        drawBoxerGlove(elbow, hand);
+      }
+      ctx.restore();
+      return;
     }
     inkPath([hip, shoulder, head], color, 9);
     ctx.fillStyle = color;
