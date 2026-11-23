@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Switchyard</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #11151d; color: #eef0e8; font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 1060px; margin: auto; padding: 24px; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+    h1 { margin: 0; letter-spacing: .07em; font-size: clamp(26px, 5vw, 42px); }
+    canvas { width: 100%; height: auto; display: block; border: 1px solid #526070; background: #192331; }
+    button { background: #263442; color: inherit; border: 1px solid #647588; padding: 8px 12px; cursor: pointer; font: inherit; }
+    button:focus-visible { outline: 2px solid #8ef2d6; outline-offset: 3px; }
+    section { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px 24px; margin-top: 12px; }
+    p { margin: 4px 0; }
+    kbd { color: #9aefda; }
+  </style>
+  <script defer src="game.js"></script>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Switchyard</h1>
+      <div><button id="mode" type="button">Switch to local versus</button> <button id="reset" type="button">Reset round</button></div>
+    </header>
+    <canvas id="arena" width="960" height="500" aria-label="Switchyard fight arena"></canvas>
+    <section aria-label="Keyboard controls">
+      <div><p><strong>Player 1</strong></p><p><kbd>A / D</kbd> move · <kbd>W</kbd> jump · <kbd>S</kbd> guard</p><p><kbd>F</kbd> light · <kbd>G</kbd> heavy · <kbd>H</kbd> launcher · <kbd>J</kbd> meter cancel</p></div>
+      <div><p><strong>Player 2</strong></p><p><kbd>← / →</kbd> move · <kbd>↑</kbd> jump · <kbd>↓</kbd> guard</p><p><kbd>I</kbd> light · <kbd>O</kbd> heavy · <kbd>P</kbd> launcher · <kbd>[</kbd> meter cancel</p></div>
+    </section>
+    <p>Try light → heavy → launcher. A launcher hit jumps with the opponent. Follow with air light → air heavy, or spend 50 meter after a hit to restart your chain.</p>
+  </main>
+</body>
+</html>
