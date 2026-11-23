@@ -150,6 +150,7 @@ function step(players, held, pressed, training) {
 function boot() {
   const canvas = document.querySelector("#arena");
   const ctx = canvas.getContext("2d");
+  ctx.scale(canvas.width / WIDTH, canvas.height / 500);
   const mode = document.querySelector("#mode");
   const held = new Set();
   const pressed = new Set();
@@ -189,7 +190,7 @@ function boot() {
   }
   function label(value, x, y, size, color = "#eef0e8", align = "left") {
     ctx.fillStyle = color;
-    ctx.font = `bold ${size}px system-ui`;
+    ctx.font = `bold ${size}px monospace`;
     ctx.textAlign = align;
     ctx.fillText(value, x, y);
   }
@@ -217,7 +218,7 @@ function boot() {
     const head = [shoulder[0] + 3, shoulder[1] - 16];
 
     ctx.save();
-    ctx.translate(x, y);
+    ctx.translate(Math.round(x / 2) * 2, Math.round(y / 2) * 2);
     ctx.scale(facing, 1);
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
@@ -251,7 +252,7 @@ function boot() {
     }
     ctx.globalAlpha = 1;
     strokePath([hip, shoulder, head], color, 7);
-    ctx.fillStyle = "#1b2936";
+    ctx.fillStyle = "#201b33";
     ctx.strokeStyle = color;
     ctx.lineWidth = 5;
     ctx.beginPath();
@@ -261,16 +262,42 @@ function boot() {
     strokePath([[head[0] + 3, head[1] - 2], [head[0] + 7, head[1] - 2]], color, 2.5);
     ctx.restore();
   }
-  function draw() {
-    box(0, 0, WIDTH, 500, "#1b2936");
-    for (let x = 25; x < WIDTH; x += 113) {
-      box(x, 157, 6, 250, "#314252");
-      box(x + 10, 177, 91, 169, "#223443");
+  function drawArena() {
+    box(0, 0, WIDTH, 500, "#17142a");
+    box(0, 124, WIDTH, 282, "#221b37");
+    box(0, 208, WIDTH, 198, "#2f2346");
+    box(0, 282, WIDTH, 124, "#3b2b51");
+
+    for (let column = 0; column < 16; column++) {
+      const x = column * 64;
+      const roof = 304 - ((column * 3) % 7) * 10;
+      box(x, roof, 52, FLOOR - roof, "#221d37");
+      for (let y = roof + 12; y < 346; y += 14) {
+        const offset = (column + y) % 3;
+        box(x + 8 + offset * 12, y, 6, 4, "#785563");
+      }
     }
-    box(0, 366, WIDTH, 4, "#516270");
-    box(0, FLOOR, WIDTH, 93, "#26323d");
-    box(0, FLOOR, WIDTH, 3, "#73818b");
-    for (let x = 24; x < WIDTH; x += 78) box(x, 445, 40, 4, "#52606a");
+
+    for (let x = 28; x < WIDTH; x += 180) {
+      box(x, 164, 10, FLOOR - 164, "#1a182d");
+      box(x + 10, 164, 4, FLOOR - 164, "#4a3b61");
+      box(x - 8, 164, 26, 6, "#817296");
+      box(x - 8, 170, 16, 4, "#d5a681");
+    }
+    box(0, 368, WIDTH, 6, "#61536e");
+    for (let x = 10; x < WIDTH; x += 42) box(x, 374, 4, 32, "#61536e");
+    box(0, FLOOR - 1, WIDTH, 94, "#242439");
+    box(0, FLOOR - 1, WIDTH, 4, "#af8f89");
+    box(0, 414, WIDTH, 6, "#444058");
+    box(0, 466, WIDTH, 34, "#19192d");
+    for (let x = 16; x < WIDTH; x += 48) {
+      box(x, 442, 26, 4, "#80705c");
+      box(x + 12, 480, 24, 4, "#35334b");
+    }
+  }
+  function draw() {
+    drawArena();
+    players.forEach(drawFighter);
     players.forEach((player, index) => {
       const right = index === 1;
       const x = right ? 590 : 40;
@@ -279,7 +306,6 @@ function boot() {
       bar(x, 77, 330, 6, player.meter / 100, "#f9d780", right);
       label(`METER ${player.meter}`, right ? 920 : 40, 104, 13, "#f9d780", right ? "right" : "left");
       if (player.combo > 1) label(`${player.combo} HIT COMBO`, right ? 920 : 40, 141, 23, player.color, right ? "right" : "left");
-      drawFighter(player);
     });
     label(training ? "PRACTICE" : "LOCAL VERSUS", WIDTH / 2, 51, 17, "#eef0e8", "center");
     const defeated = players.filter((player) => player.health === 0);
