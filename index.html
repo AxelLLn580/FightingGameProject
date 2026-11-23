@@ -6,12 +6,12 @@
   <title>Switchyard</title>
   <style>
     * { box-sizing: border-box; }
-    body { margin: 0; background: #11172b; color: #fff0bc; font: 15px/1.5 ui-monospace, Consolas, monospace; }
+    body { margin: 0; background: #111827; color: #f2f4fa; font: 16px/1.5 system-ui, sans-serif; }
     main { max-width: 1060px; margin: auto; padding: 24px; }
     header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
-    h1 { margin: 0; letter-spacing: .07em; font-size: clamp(26px, 5vw, 42px); text-transform: uppercase; text-shadow: 4px 4px #31527a; }
-    canvas { width: 100%; height: auto; display: block; border: 3px solid #7586a3; background: #11172b; image-rendering: pixelated; }
-    button { background: #242d4d; color: inherit; border: 2px solid #7586a3; padding: 8px 12px; cursor: pointer; font: inherit; box-shadow: 3px 3px #31527a; }
+    h1 { margin: 0; letter-spacing: .04em; font-size: clamp(26px, 5vw, 46px); font-style: italic; font-weight: 900; }
+    canvas { width: 100%; height: auto; display: block; border: 1px solid #637392; background: #252f47; }
+    button { background: #24334e; color: inherit; border: 1px solid #637392; padding: 8px 12px; cursor: pointer; font: inherit; font-weight: 600; }
     button:focus-visible { outline: 2px solid #8ef2d6; outline-offset: 3px; }
     section { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px 24px; margin-top: 12px; }
     p { margin: 4px 0; }
@@ -25,7 +25,7 @@
       <h1>Switchyard</h1>
       <div><button id="mode" type="button">Switch to local versus</button> <button id="reset" type="button">Reset round</button></div>
     </header>
-    <canvas id="arena" width="320" height="167" aria-label="Switchyard fight arena"></canvas>
+    <canvas id="arena" width="960" height="500" aria-label="Switchyard fight arena"></canvas>
     <section aria-label="Keyboard controls">
       <div><p><strong>Player 1</strong></p><p><kbd>A / D</kbd> move · <kbd>W</kbd> jump · <kbd>S</kbd> guard</p><p><kbd>F</kbd> light · <kbd>G</kbd> heavy · <kbd>H</kbd> launcher · <kbd>J</kbd> meter cancel</p></div>
       <div><p><strong>Player 2</strong></p><p><kbd>← / →</kbd> move · <kbd>↑</kbd> jump · <kbd>↓</kbd> guard</p><p><kbd>I</kbd> light · <kbd>O</kbd> heavy · <kbd>P</kbd> launcher · <kbd>[</kbd> meter cancel</p></div>

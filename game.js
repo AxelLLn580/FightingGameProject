@@ -1,7 +1,6 @@
 "use strict";
 
 const WIDTH = 960;
-const HEIGHT = 501;
 const FLOOR = 407;
 const MAX_HEALTH = 300;
 const CANCEL_COST = 50;
@@ -21,12 +20,13 @@ const grounded = (fighter) => fighter.y === FLOOR;
 function fighter(x, color, facing) {
   return { x, y: FLOOR, vy: 0, color, facing, health: MAX_HEALTH, meter: 50,
     stun: 0, attack: null, guard: false, combo: 0, buffer: null, cancelFlash: 0,
-    idlePhase: 0, walkPhase: 0, walkBlend: 0, walkDirection: 1 };
+    idlePhase: 0, walkPhase: 0, walkBlend: 0, walkDirection: 1, impact: null };
 }
 
 function updateFighter(player, opponent, controls, held, pressed) {
   player.stun = Math.max(0, player.stun - 1);
   player.cancelFlash = Math.max(0, player.cancelFlash - 1);
+  if (player.impact && --player.impact.frames === 0) player.impact = null;
 
   if (player.attack) {
     player.attack.age++;
@@ -81,6 +81,7 @@ function contact(from, to) {
 
 function resolveHit({ from, to, attack, blocked }) {
   const { move, name } = attack;
+  to.impact = { frames: 12, x: to.x - from.facing * 15, y: to.y - 58, direction: from.facing, name, blocked };
   if (blocked) {
     from.combo = 0;
     to.stun = 10;
@@ -151,7 +152,6 @@ function step(players, held, pressed, training) {
 function boot() {
   const canvas = document.querySelector("#arena");
   const ctx = canvas.getContext("2d");
-  ctx.scale(canvas.width / WIDTH, canvas.height / HEIGHT);
   const mode = document.querySelector("#mode");
   const held = new Set();
   const pressed = new Set();
@@ -191,7 +191,7 @@ function boot() {
   }
   function label(value, x, y, size, color = "#eef0e8", align = "left") {
     ctx.fillStyle = color;
-    ctx.font = `bold ${size}px monospace`;
+    ctx.font = `italic 800 ${size}px system-ui`;
     ctx.textAlign = align;
     ctx.fillText(value, x, y);
   }
@@ -199,22 +199,24 @@ function boot() {
     box(x, y, width, height, "#384455");
     box(reverse ? x + width * (1 - fraction) : x, y, width * fraction, height, color);
   }
-  const pixel = 3;
-  const snap = (value) => Math.round(value / pixel) * pixel;
-
-  function pixelPath(points, color, width = 6) {
+  function strokePath(points, color, width) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    ctx.moveTo(...points[0]);
+    for (const point of points.slice(1)) ctx.lineTo(...point);
+    ctx.stroke();
+  }
+  function inkPath(points, color, width) {
+    strokePath(points, "#141b2b", width + 5);
+    strokePath(points, color, width);
+  }
+  function polygon(points, color) {
     ctx.fillStyle = color;
     ctx.beginPath();
-    for (let index = 1; index < points.length; index++) {
-      const [x, y] = points[index - 1];
-      const [nextX, nextY] = points[index];
-      const dx = nextX - x;
-      const dy = nextY - y;
-      const steps = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / pixel));
-      for (let step = 0; step <= steps; step++) {
-        ctx.rect(snap(x + dx * step / steps - width / 2), snap(y + dy * step / steps - width / 2), width, width);
-      }
-    }
+    ctx.moveTo(...points[0]);
+    for (const point of points.slice(1)) ctx.lineTo(...point);
+    ctx.closePath();
     ctx.fill();
   }
   function drawFighter(player) {
@@ -223,91 +225,127 @@ function boot() {
     const moving = attack || guard || stun || airborne ? 0 : walkBlend;
     const breath = Math.sin(idlePhase);
     const stride = Math.sin(walkPhase);
-    const hip = [0, -43 + breath * (1 - moving) - Math.abs(stride) * 4 * moving];
-    const lean = stun ? -9 : attack ? 9 : 4 + 6 * moving * walkDirection;
+    const anticipation = attack && attack.age < attack.move.startup ? attack.age / attack.move.startup : 0;
+    const release = attack && attack.age >= attack.move.startup
+      ? Math.max(0, 1 - (attack.age - attack.move.startup) / (attack.move.active + 7)) : 0;
+    const hip = [0, -43 + breath * (1 - moving) - Math.abs(stride) * 4 * moving + anticipation * 8];
+    const lean = stun && !guard ? -14 : 4 + 6 * moving * walkDirection - anticipation * 15 + release * 16;
     const shoulder = [lean, hip[1] - 31 + breath * 1.5 * (1 - moving)];
     const head = [shoulder[0] + 3, shoulder[1] - 16];
 
     ctx.save();
-    ctx.translate(snap(x), snap(y));
+    ctx.translate(x, y);
     ctx.scale(facing, 1);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
     if (cancelFlash) {
-      const radius = snap(51 + (13 - cancelFlash) * 2);
-      const center = -48;
-      pixelPath([[0, center - radius], [radius, center], [0, center + radius], [-radius, center], [0, center - radius]], "#fff0bc", pixel);
+      ctx.strokeStyle = "#f9efb1";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(0, -46, 55 + (13 - cancelFlash) * 2, 0, Math.PI * 2);
+      ctx.stroke();
     }
+    if (release > 0.45) {
+      const reach = attack.name === "light" ? 56 : 76;
+      const height = attack.name === "launcher" ? -41 : 2;
+      ctx.globalAlpha = release * 0.55;
+      polygon([[15, shoulder[1] + 14], [reach, shoulder[1] + height], [reach + 13, shoulder[1] + height - 12], [36, shoulder[1] - 5]], color);
+      ctx.globalAlpha = 1;
+    }
+    const shadow = color === "#70e2c4" ? "#3a9388" : "#ba6445";
     for (const side of [-1, 1]) {
       const phase = walkPhase + (side === 1 ? Math.PI : 0);
       const swing = Math.sin(phase) * walkDirection * moving;
       const lift = Math.max(0, Math.cos(phase)) * 15 * moving;
       const foot = [side * 12 * (1 - moving) + swing * 24, -4 - lift - (airborne ? (side === 1 ? 13 : 6) : 0)];
       const knee = [foot[0] * 0.55 + 5 + lift * 0.3, (hip[1] + foot[1]) / 2 - lift * 0.18];
-      ctx.globalAlpha = side === -1 ? 0.54 : 1;
-      pixelPath([hip, knee, foot, [foot[0] + 7, foot[1]]], color);
+      const limb = side === -1 ? shadow : color;
+      inkPath([hip, knee, foot, [foot[0] + 7, foot[1]]], limb, 7);
 
       let elbow = [shoulder[0] + side * 8 - swing * 11, shoulder[1] + 16];
       let hand = [shoulder[0] + 12 + side * 7 - swing * 21, shoulder[1] + 6 + moving * 18 + breath * 1.5];
       if (guard) {
         elbow = [shoulder[0] + 10, shoulder[1] + 13];
         hand = [shoulder[0] + 23 + side * 3, shoulder[1] - 8 + side * 5];
-      } else if (side === 1 && active(attack)) {
+      } else if (side === 1 && attack) {
         const raised = attack.name === "launcher";
-        elbow = [27, shoulder[1] + (raised ? -5 : 5)];
-        hand = [Math.min(59, attack.move.range - 33), shoulder[1] + (raised ? -28 : 3)];
+        elbow = [elbow[0] - 18 * anticipation + 26 * release, elbow[1] - 12 * release];
+        hand = [hand[0] - 29 * anticipation + (attack.name === "light" ? 26 : 38) * release,
+          hand[1] + 10 * anticipation - (raised ? 44 : 4) * release];
       }
-      pixelPath([shoulder, elbow, hand], color);
+      inkPath([shoulder, elbow, hand], limb, 7);
     }
-    ctx.globalAlpha = 1;
-    pixelPath([hip, shoulder, head], color);
-    const [headX, headY] = head.map(snap);
-    box(headX - 9, headY - 12, 18, 24, color);
-    box(headX - 12, headY - 9, 24, 18, color);
-    box(headX - 6, headY - 6, 12, 12, "#11172b");
-    box(headX + 3, headY - 3, 3, 3, color);
+    inkPath([hip, shoulder, head], color, 9);
+    ctx.fillStyle = color;
+    ctx.strokeStyle = "#141b2b";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(...head, 12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    polygon([[head[0] - 9, head[1] + 2], [head[0] + 9, head[1] + 5], [head[0] + 2, head[1] + 10], [head[0] - 6, head[1] + 8]], shadow);
+    strokePath([[head[0] + 2, head[1] - 4], [head[0] + 8, head[1] - 2]], "#141b2b", 2.5);
     ctx.restore();
   }
-  function drawArena() {
-    box(0, 0, WIDTH, HEIGHT, "#11172b");
-    box(0, 126, WIDTH, 282, "#242d4d");
-    box(0, 252, WIDTH, 156, "#31527a");
-
-    for (let column = 0; column < 16; column++) {
-      const x = column * 63;
-      const roof = 306 - ((column * 3) % 7) * 12;
-      box(x, roof, 51, 408 - roof, "#242d4d");
-      for (let y = roof + 12; y < 348; y += 18) {
-        box(x + 9 + ((column + y / 3) % 3) * 12, y, 6, 6, "#d99762");
-      }
-    }
-
-    for (let x = 27; x < WIDTH; x += 180) {
-      box(x, 174, 9, 234, "#11172b");
-      box(x - 9, 174, 24, 6, "#7586a3");
-      box(x - 9, 180, 12, 6, "#fff0bc");
-    }
-    box(0, 372, WIDTH, 6, "#7586a3");
-    for (let x = 12; x < WIDTH; x += 42) box(x, 378, 6, 30, "#7586a3");
-    box(0, 408, WIDTH, HEIGHT - 408, "#242d4d");
-    box(0, 408, WIDTH, 6, "#d99762");
-    box(0, 462, WIDTH, HEIGHT - 462, "#11172b");
-    for (let x = 18; x < WIDTH; x += 48) {
-      box(x, 438, 24, 6, "#7586a3");
-      box(x + 12, 480, 24, 6, "#31527a");
-    }
+  function drawImpact({ x, y, direction, name, frames, blocked }) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(direction, 1);
+    ctx.rotate(name === "launcher" ? -0.85 : -0.18);
+    ctx.globalAlpha = frames / 12;
+    const size = 17 + (12 - frames) * 3 + (name === "light" ? 0 : 9);
+    const points = [[-1, 0], [-size, -size * 0.4], [-size * 0.18, -size * 0.18],
+      [size * 0.6, -size], [size * 0.38, -size * 0.18], [size * 1.4, 0],
+      [size * 0.28, size * 0.18], [size * 0.7, size * 0.85], [-size * 0.2, size * 0.24], [-size * 0.65, size * 0.55]];
+    polygon(points, blocked ? "#55caff" : "#ff995e");
+    ctx.scale(0.55, 0.55);
+    polygon(points, "#fff7d5");
+    ctx.restore();
   }
+  const sky = ctx.createLinearGradient(0, 0, 0, FLOOR);
+  sky.addColorStop(0, "#243754");
+  sky.addColorStop(0.65, "#825e78");
+  sky.addColorStop(1, "#ec9e7f");
+
   function draw() {
-    drawArena();
+    box(0, 0, WIDTH, FLOOR, sky);
+    for (let x = 0; x < WIDTH; x += 67) {
+      const roof = 305 - (x % 9) * 9;
+      box(x, roof, 55, FLOOR - roof, "#42435d");
+      for (let y = roof + 12; y < 340; y += 18) box(x + 12, y, 19, 4, "#c78e80");
+    }
+    for (let x = -30; x < WIDTH; x += 180) {
+      polygon([[x, 190], [x + 18, 190], [x + 112, FLOOR], [x + 96, FLOOR]], "#282b43");
+      box(x, 185, 98, 10, "#353951");
+      box(x + 54, 195, 29, 4, "#f4be96");
+    }
+    box(0, 371, WIDTH, 5, "#303048");
+    box(0, FLOOR, WIDTH, 93, "#262d45");
+    box(0, FLOOR, WIDTH, 4, "#e0a188");
+    for (let x = -24; x < WIDTH; x += 78) {
+      polygon([[x, 431], [x + 38, 431], [x + 54, 440], [x + 14, 440]], "#795d6a");
+    }
+    box(0, 458, WIDTH, 4, "#151d32");
+    for (const player of players) {
+      ctx.fillStyle = "#171c30";
+      ctx.beginPath();
+      ctx.ellipse(player.x, FLOOR + 4, 25, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
     players.forEach(drawFighter);
+    for (const player of players) {
+      if (player.impact) drawImpact(player.impact);
+    }
     players.forEach((player, index) => {
       const right = index === 1;
       const x = right ? 590 : 40;
-      label(right ? (training ? "DUMMY" : "PLAYER 2") : "PLAYER 1", right ? 920 : 40, 42, 21, player.color, right ? "right" : "left");
+      label(right ? (training ? "DUMMY" : "PLAYER 2") : "PLAYER 1", right ? 920 : 40, 42, 17, player.color, right ? "right" : "left");
       bar(x, 51, 330, 19, player.health / MAX_HEALTH, player.color, right);
       bar(x, 77, 330, 6, player.meter / 100, "#f9d780", right);
-      label(`METER ${player.meter}`, right ? 920 : 40, 108, 18, "#f9d780", right ? "right" : "left");
+      label(`METER ${player.meter}`, right ? 920 : 40, 104, 13, "#f9d780", right ? "right" : "left");
       if (player.combo > 1) label(`${player.combo} HIT COMBO`, right ? 920 : 40, 141, 23, player.color, right ? "right" : "left");
     });
-    label(training ? "PRACTICE" : "LOCAL VERSUS", WIDTH / 2, 51, 21, "#fff0bc", "center");
+    label(training ? "PRACTICE" : "LOCAL VERSUS", WIDTH / 2, 51, 17, "#eef0e8", "center");
     const defeated = players.filter((player) => player.health === 0);
     if (defeated.length) {
       box(245, 182, 470, 98, "#11151d");
